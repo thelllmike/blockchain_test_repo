@@ -1,29 +1,22 @@
+// constants/thirdweb.ts
 import { createThirdwebClient, getContract } from "thirdweb";
-import { base, baseSepolia } from "thirdweb/chains";
-import { setThirdwebDomains } from "thirdweb/utils";
+import { defineChain } from "thirdweb/chains";
 
-const clientId = process.env.EXPO_PUBLIC_THIRDWEB_CLIENT_ID!;
+// Use your clientId here (for testing, hardcoded; for production, use an environment variable)
+const clientId = "eaa364fbfd9f542bc5580747f2ff8cf0";
 
-if (!clientId) {
-  throw new Error(
-    "Missing EXPO_PUBLIC_THIRDWEB_CLIENT_ID - make sure to set it in your .env file"
-  );
-}
-
-export const client = createThirdwebClient({
+const client = createThirdwebClient({
   clientId,
 });
 
-export const chain = baseSepolia;
+// Define your custom chain using the Sepolia chain ID (11155111)
+export const chain = defineChain(11155111);
 
-export const contract = getContract({
+// Create and export your contract instance using the client, chain, and your contract address.
+export const parkingFeeContract = getContract({
   client,
-  address: "0x82e50a6BF13A70366eDFC871f8FB8a428C43Dc03",
   chain,
+  address: "0x8136D6Af9cDc79Cd722326f56c982C501602756D",
 });
 
-export const usdcContract = getContract({
-  address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  chain: base,
-  client,
-});
+export { client };
