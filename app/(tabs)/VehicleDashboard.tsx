@@ -14,10 +14,8 @@ import { shortenAddress } from "thirdweb/utils";
 import profile from "@/assets/images/profile.png"; // Dummy profile image
 
 export default function VehicleDashboard() {
-  // Get the connected account
   const account = useActiveAccount();
 
-  // Read vehicle info for the connected user
   const { data, isPending, error } = useReadContract({
     contract: parkingFeeContract,
     method:
@@ -27,7 +25,7 @@ export default function VehicleDashboard() {
 
   if (!account) {
     return (
-      <View style={styles.container}>
+      <View style={styles.centeredContainer}>
         <Text style={styles.message}>
           Please connect your wallet to view your vehicles.
         </Text>
@@ -37,7 +35,7 @@ export default function VehicleDashboard() {
 
   if (isPending) {
     return (
-      <View style={styles.container}>
+      <View style={styles.centeredContainer}>
         <ActivityIndicator size="large" color="#ffffff" />
       </View>
     );
@@ -45,7 +43,7 @@ export default function VehicleDashboard() {
 
   if (error) {
     return (
-      <View style={styles.container}>
+      <View style={styles.centeredContainer}>
         <Text style={[styles.message, styles.error]}>
           Error fetching vehicle info: {error.message}
         </Text>
@@ -54,10 +52,10 @@ export default function VehicleDashboard() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>My Vehicles</Text>
+    <View style={styles.centeredContainer}>
       {data && data.length > 0 ? (
         <FlatList
+          contentContainerStyle={styles.centeredList}
           data={data}
           keyExtractor={(_, index) => index.toString()}
           renderItem={({ item }) => (
@@ -84,17 +82,17 @@ export default function VehicleDashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
+  centeredContainer: {
     flex: 1,
     backgroundColor: "#0B0F0F",
+    justifyContent: "center",
     alignItems: "center",
+    padding: 16,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#fff",
-    marginBottom: 24,
+  centeredList: {
+    justifyContent: "center",
+    alignItems: "center",
+    flexGrow: 1,
   },
   message: {
     fontSize: 16,
@@ -106,49 +104,49 @@ const styles = StyleSheet.create({
   },
   profileCard: {
     backgroundColor: "#0F2E23",
-    padding: 20,
-    borderRadius: 16,
-    width: "100%",
+    padding: 32,
+    borderRadius: 20,
+    width: 320,
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 24,
   },
   imageWrapper: {
-    borderWidth: 3,
+    borderWidth: 4,
     borderColor: "#00FF9D",
     borderRadius: 100,
-    padding: 4,
+    padding: 6,
   },
   profileImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     resizeMode: "cover",
   },
   userName: {
-    marginTop: 16,
-    fontSize: 20,
+    marginTop: 20,
+    fontSize: 22,
     fontWeight: "bold",
     color: "#fff",
   },
   userDetails: {
-    fontSize: 14,
+    fontSize: 16,
     color: "#A0A0A0",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   infoBox: {
     width: "100%",
     backgroundColor: "#0B0F0F",
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 24,
   },
   label: {
     color: "#ccc",
-    fontSize: 14,
-    marginTop: 8,
+    fontSize: 16,
+    marginTop: 10,
   },
   value: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "bold",
   },
 });
