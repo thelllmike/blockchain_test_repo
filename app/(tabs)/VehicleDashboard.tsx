@@ -6,10 +6,12 @@ import {
   StyleSheet,
   ActivityIndicator,
   FlatList,
+  Image,
 } from "react-native";
 import { useActiveAccount, useReadContract } from "thirdweb/react";
 import { parkingFeeContract } from "@/constants/thirdweb";
 import { shortenAddress } from "thirdweb/utils";
+import profile from "@/assets/images/profile.png"; // Dummy profile image
 
 export default function VehicleDashboard() {
   // Get the connected account
@@ -23,7 +25,6 @@ export default function VehicleDashboard() {
     params: [account?.address || "0x0"],
   });
 
-  // If no wallet is connected
   if (!account) {
     return (
       <View style={styles.container}>
@@ -34,7 +35,6 @@ export default function VehicleDashboard() {
     );
   }
 
-  // While loading
   if (isPending) {
     return (
       <View style={styles.container}>
@@ -43,7 +43,6 @@ export default function VehicleDashboard() {
     );
   }
 
-  // If there's an error
   if (error) {
     return (
       <View style={styles.container}>
@@ -62,27 +61,18 @@ export default function VehicleDashboard() {
           data={data}
           keyExtractor={(_, index) => index.toString()}
           renderItem={({ item }) => (
-            <View style={styles.item}>
-              <Text style={styles.itemText}>
-                <Text style={styles.label}>Vehicle Number: </Text>
-                {item.vehicleNumber}
-              </Text>
-              <Text style={styles.itemText}>
-                <Text style={styles.label}>User Name: </Text>
-                {item.userName}
-              </Text>
-              <Text style={styles.itemText}>
-                <Text style={styles.label}>Wallet Address: </Text>
-                {shortenAddress(item.walletAddress)}
-              </Text>
-              <Text style={styles.itemText}>
-                <Text style={styles.label}>Parking Hours: </Text>
-                {item.parkingHours.toString()}
-              </Text>
-              <Text style={styles.itemText}>
-                <Text style={styles.label}>Total Fee: </Text>
-                {item.totalFee.toString()}
-              </Text>
+            <View style={styles.profileCard}>
+              <View style={styles.imageWrapper}>
+                <Image source={profile} style={styles.profileImage} />
+              </View>
+              <Text style={styles.userName}>{item.userName}</Text>
+              <Text style={styles.userDetails}>{item.vehicleNumber} - {shortenAddress(item.walletAddress)}</Text>
+              <View style={styles.infoBox}>
+                <Text style={styles.label}>Parking Hours</Text>
+                <Text style={styles.value}>{item.parkingHours.toString()}</Text>
+                <Text style={styles.label}>Total Fee</Text>
+                <Text style={styles.value}>{item.totalFee.toString()}</Text>
+              </View>
             </View>
           )}
         />
@@ -94,17 +84,71 @@ export default function VehicleDashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, flex: 1, backgroundColor: "#000" },
-  title: { fontSize: 20, fontWeight: "bold", marginBottom: 12, color: "#fff" },
-  message: { fontSize: 16, marginTop: 16, color: "#fff" },
-  error: { color: "red" },
-  item: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
+  container: {
+    padding: 16,
+    flex: 1,
+    backgroundColor: "#0B0F0F",
+    alignItems: "center",
   },
-  itemText: { fontSize: 16, marginVertical: 2, color: "#fff" },
-  label: { fontWeight: "bold", color: "#fff" },
+  title: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#fff",
+    marginBottom: 24,
+  },
+  message: {
+    fontSize: 16,
+    marginTop: 16,
+    color: "#fff",
+  },
+  error: {
+    color: "red",
+  },
+  profileCard: {
+    backgroundColor: "#0F2E23",
+    padding: 20,
+    borderRadius: 16,
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  imageWrapper: {
+    borderWidth: 3,
+    borderColor: "#00FF9D",
+    borderRadius: 100,
+    padding: 4,
+  },
+  profileImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    resizeMode: "cover",
+  },
+  userName: {
+    marginTop: 16,
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#fff",
+  },
+  userDetails: {
+    fontSize: 14,
+    color: "#A0A0A0",
+    marginBottom: 16,
+  },
+  infoBox: {
+    width: "100%",
+    backgroundColor: "#0B0F0F",
+    borderRadius: 12,
+    padding: 16,
+  },
+  label: {
+    color: "#ccc",
+    fontSize: 14,
+    marginTop: 8,
+  },
+  value: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
 });
