@@ -16,7 +16,7 @@ export const chain = defineChain(11155111);
 export const parkingFeeContract = getContract({
   client,
   chain,
-  address: "0x166a533168a11fbfc12645c92593131ede161a2c",
+  address: "0x86f00375cd8c965c74e0fed57d937371635c9e1a",
 });
 
 export { client };
