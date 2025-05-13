@@ -12,7 +12,6 @@ import {
 import { WebView } from "react-native-webview";
 import { prepareContractCall } from "thirdweb";
 import { useSendTransaction } from "thirdweb/react";
-import CryptoJS from "crypto-js";
 import { parkingFeeContract } from "@/constants/thirdweb";
 
 const PAYPAL_CLIENT_ID = "AdPbYstY_n0fyZHyyKLNfPLaI6xIJm97ATNJ2WvfoPgXNW8BIsxtdbZIJ4cHz6B--cWF2cAE6f0aLnWg";  // replace with your PayPal client ID
@@ -58,7 +57,7 @@ export default function PayFee() {
     });
   };
 
-  // 2) PayPal payment HTML generator
+  // 2) PayPal payment HTML generator (centered button)
   const handlePayPalPayment = () => {
     if (!vehicleNumber.trim()) {
       setStatus("Please enter a valid vehicle number.");
@@ -71,9 +70,14 @@ export default function PayFee() {
       <!DOCTYPE html>
       <html>
         <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <style>
+            html, body { margin:0; padding:0; height:100vh; width:100vw; }
+            body { display:flex; justify-content:center; align-items:center; background-color:#ffffff; }
+            #paypal-button-container { width: 100%; max-width: 400px; }
+          </style>
         </head>
-        <body style="margin:0;padding:20px;display:flex;justify-content:center;">
+        <body>
           <div id="paypal-button-container"></div>
           <script src="https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=${currency}"></script>
           <script>
@@ -111,7 +115,7 @@ export default function PayFee() {
     setShowPayPal(true);
   };
 
-  // 3) Render PayPal WebView
+  // 3) Render PayPal WebView when triggered
   if (showPayPal) {
     return (
       <SafeAreaView style={styles.webviewContainer}>
@@ -131,16 +135,14 @@ export default function PayFee() {
             }
           }}
           startInLoadingState
-          renderLoading={() => (
-            <ActivityIndicator style={styles.webviewContainer} color="#fff" />
-          )}
+          renderLoading={() => <ActivityIndicator style={styles.webviewContainer} color="#fff" />}
           style={styles.webviewContainer}
         />
       </SafeAreaView>
     );
   }
 
-  // 4) Default view: form, buttons, status
+  // 4) Default view: form, wallet & PayPal buttons
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Pay Parking Fee</Text>
@@ -159,17 +161,10 @@ export default function PayFee() {
           onPress={handleWalletPayment}
           disabled={walletLoading}
         >
-          {walletLoading ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={styles.buttonText}>Pay with Wallet</Text>
-          )}
+          {walletLoading ? <ActivityIndicator color="#000" /> : <Text style={styles.buttonText}>Pay with Wallet</Text>}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.payPalButton}
-          onPress={handlePayPalPayment}
-        >
+        <TouchableOpacity style={styles.payPalButton} onPress={handlePayPalPayment}>
           <Text style={styles.buttonText}>Pay with PayPal</Text>
         </TouchableOpacity>
       </View>
