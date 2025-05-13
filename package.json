@@ -22,6 +22,7 @@
     "@thirdweb-dev/react-native-adapter": "^1.5.4",
     "@walletconnect/react-native-compat": "^2.17.5",
     "amazon-cognito-identity-js": "^6.3.12",
+    "crypto-js": "^4.2.0",
     "ethers": "^6.13.5",
     "expo": "51.0.32",
     "expo-application": "5.9.1",
@@ -35,6 +36,7 @@
     "expo-status-bar": "~1.12.1",
     "expo-system-ui": "~3.0.4",
     "expo-web-browser": "~13.0.3",
+    "js-sha512": "^0.9.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-native": "0.74.5",
@@ -51,6 +53,7 @@
     "react-native-screens": "3.34.0",
     "react-native-svg": "15.2.0",
     "react-native-web": "0.19.12",
+    "react-native-webview": "^13.13.5",
     "thirdweb": "^5.93.4"
   },
   "devDependencies": {
