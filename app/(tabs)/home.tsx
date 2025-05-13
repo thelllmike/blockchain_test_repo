@@ -109,7 +109,7 @@ export default function HomeScreen() {
                 Parked Time: {item.parkingHours} hrs
               </Text>
               <Text style={styles.cardText}>
-                Amount Paid: {item.amountPaid} ETH
+                Amount Paid: {item.amountPaid} LKR
               </Text>
               <Text style={styles.cardText}>On: {item.timestamp}</Text>
               <View style={styles.cardFooter}>
@@ -133,7 +133,7 @@ export default function HomeScreen() {
         <Text style={styles.violationDescription}>
           You got 3 violations and deducted it by your wallet.
         </Text>
-        <Text style={styles.violationTotal}>Total: 0.003 ETH</Text>
+        <Text style={styles.violationTotal}>Total: 0.003 LKR</Text>
       </View>
     </ScrollView>
   );
