@@ -15,7 +15,7 @@ export default function TabLayout() {
         headerShown: false,
       }}
     >
-      {/* 1) Home (read.tsx) */}
+      {/* 1) Home */}
       <Tabs.Screen
         name="home"
         options={{
@@ -43,7 +43,7 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 3) Wallet (index.tsx) */}
+      {/* 3) Wallet */}
       <Tabs.Screen
         name="index"
         options={{
@@ -57,7 +57,22 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 4) Vehicle Dashboard */}
+      {/* 4) Slots */}
+      <Tabs.Screen
+        name="Slot"
+        options={{
+          title: "Slots",
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon
+              // using Ionicons grid icon to represent parking slots
+              name={focused ? "grid" : "grid-outline"}
+              color={color}
+            />
+          ),
+        }}
+      />
+
+      {/* 5) Vehicle Dashboard */}
       <Tabs.Screen
         name="VehicleDashboard"
         options={{
