@@ -1,3 +1,4 @@
+// components/PayFeeScreen.jsx
 import React, { useState, useRef, useEffect } from "react";
 import {
   View,
@@ -38,35 +39,64 @@ export default function PayFeeScreen() {
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState(null);
+
+  // success animation
   const [modalScale] = useState(new Animated.Value(0));
   const [showSuccess, setShowSuccess] = useState(false);
+
+  // PayPal
   const [showPayPal, setShowPayPal] = useState(false);
   const [payPalHtml, setPayPalHtml] = useState("");
-  const [showCardModal, setShowCardModal] = useState(false);
-  const [cardDetails, setCardDetails] = useState(null);
-  const [showPointsModal, setShowPointsModal] = useState(false);
-  const [pointsBalance] = useState(0.0);
-
-  // New loading state for card payments
-  const [cardLoading, setCardLoading] = useState(false);
-
   const webviewRef = useRef(null);
 
-  // fetch saved card on mount
+  // Card
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [cardDetails, setCardDetails] = useState(null);
+  const [cardLoading, setCardLoading] = useState(false);
+
+  // Points
+  const [showPointsModal, setShowPointsModal] = useState(false);
+  const [pointsBalance, setPointsBalance] = useState(0);
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const [pointsPayAmount, setPointsPayAmount] = useState("");
+  const [topUpLoading, setTopUpLoading] = useState(false);
+  const [payPointsLoading, setPayPointsLoading] = useState(false);
+
+  // Cash
+  const [showCashModal, setShowCashModal] = useState(false);
+
+  // Fetch saved card once
   useEffect(() => {
-    const fetchCardDetails = async () => {
+    (async () => {
       try {
         const res = await fetch(`${API_BASE}/payments/users/${USER_ID}/cards`);
         const data = await res.json();
-        setCardDetails(data.length ? data[0] : null);
-      } catch (error) {
-        console.error("Error fetching card details:", error);
+        setCardDetails(data[0] || null);
+      } catch (e) {
+        console.error(e);
       }
-    };
-    fetchCardDetails();
+    })();
   }, []);
 
-  // animate the ✓ success circle
+  // Fetch current points balance whenever modal opens
+  useEffect(() => {
+    if (!showPointsModal) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/payments/users/${USER_ID}/topup/points`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount: 0 }),
+        });
+        const json = await res.json();
+        setPointsBalance(json.points_balance);
+      } catch (e) {
+        console.error("Fetch points failed", e);
+      }
+    })();
+  }, [showPointsModal]);
+
+  // Success animation
   const animateSuccess = () => {
     setShowSuccess(true);
     modalScale.setValue(0);
@@ -78,17 +108,14 @@ export default function PayFeeScreen() {
     }).start(() => setTimeout(() => setShowSuccess(false), 1500));
   };
 
-  // PAY WITH WALLET
+  // Wallet payment
   const payWithWallet = () => {
-    if (!vehicleNumber.trim()) {
-      return setStatus("Enter a vehicle number.");
-    }
+    if (!vehicleNumber.trim()) return setStatus("Enter a vehicle number.");
     const tx = prepareContractCall({
       contract: parkingFeeContract,
       method: "function payFee(string)",
       params: [vehicleNumber],
     });
-
     sendTransaction(tx, {
       onSuccess: ({ transactionHash }) => {
         animateSuccess();
@@ -100,11 +127,9 @@ export default function PayFeeScreen() {
     });
   };
 
-  // PAY WITH PAYPAL
+  // PayPal
   const payWithPayPal = () => {
-    if (!vehicleNumber.trim()) {
-      return setStatus("Enter a vehicle number.");
-    }
+    if (!vehicleNumber.trim()) return setStatus("Enter a vehicle number.");
     const html = `
       <!DOCTYPE html><html><head>
         <meta name='viewport' content='width=device-width, initial-scale=1'/>
@@ -116,9 +141,9 @@ export default function PayFeeScreen() {
           paypal.Buttons({
             style:{layout:'vertical',color:'gold',shape:'pill',label:'paypal'},
             createOrder:(d,a)=>a.order.create({purchase_units:[{amount:{value:'200.00'},custom_id:'${vehicleNumber}'}]}),
-            onApprove:(d,a)=>a.order.capture().then(details=>
-              window.ReactNativeWebView.postMessage(JSON.stringify({status:'success',orderID:d.orderID}))
-            ),
+            onApprove:(d,a)=>a.order.capture().then(()=>{
+              window.ReactNativeWebView.postMessage(JSON.stringify({status:'success',orderID:d.orderID}));
+            }),
             onCancel:()=>window.ReactNativeWebView.postMessage(JSON.stringify({status:'cancel'})),
             onError:(e)=>window.ReactNativeWebView.postMessage(JSON.stringify({status:'error',error:e.toString()}))
           }).render('#paypal-button-container');
@@ -127,8 +152,6 @@ export default function PayFeeScreen() {
     setPayPalHtml(html);
     setShowPayPal(true);
   };
-
-  // handle messages from PayPal webview
   const onWebViewMsg = (evt) => {
     const msg = JSON.parse(evt.nativeEvent.data);
     setShowPayPal(false);
@@ -142,13 +165,62 @@ export default function PayFeeScreen() {
     }
   };
 
-  // main "Proceed" dispatcher
+  // Top-up points
+  const topUpPoints = async () => {
+    if (!topUpAmount) return Alert.alert("Enter an amount");
+    setTopUpLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/payments/users/${USER_ID}/topup/points`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: parseFloat(topUpAmount) }),
+      });
+      const json = await res.json();
+      setPointsBalance(json.points_balance);
+      setTopUpAmount("");
+    } catch (e) {
+      Alert.alert("Top-up failed", e.message);
+    } finally {
+      setTopUpLoading(false);
+    }
+  };
+
+  // Pay with points
+  const payWithPoints = async () => {
+    if (!vehicleNumber.trim()) return Alert.alert("Enter vehicle number");
+    if (!pointsPayAmount) return Alert.alert("Enter pay amount");
+    setPayPointsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/payments/users/${USER_ID}/pay/points`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vehicle_number: vehicleNumber,
+          amount: parseFloat(pointsPayAmount),
+          card_id: 0,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        animateSuccess();
+        setStatus(`Points ✓ Paid ${pointsPayAmount}`);
+        setShowPointsModal(false);
+      } else {
+        Alert.alert("Payment failed", json.message || "Unknown");
+      }
+    } catch (e) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setPayPointsLoading(false);
+    }
+  };
+
+  // Cash-at-gate
   const onProceed = () => {
     if (!selected) return;
     switch (selected) {
       case "cash":
-        animateSuccess();
-        setStatus("Paid Cash ✓");
+        setShowCashModal(true);
         break;
       case "card":
         setShowCardModal(true);
@@ -165,15 +237,10 @@ export default function PayFeeScreen() {
     }
   };
 
-  // CARD PAYMENT
+  // Save card payment
   const saveCardPayment = async () => {
-    if (!vehicleNumber.trim()) {
-      return Alert.alert("Error", "Enter a vehicle number.");
-    }
-    if (!cardDetails) {
-      return Alert.alert("Error", "No card details found.");
-    }
-
+    if (!vehicleNumber.trim()) return Alert.alert("Enter a vehicle number.");
+    if (!cardDetails) return Alert.alert("No card found.");
     setCardLoading(true);
     try {
       const res = await fetch(`${API_BASE}/payments/users/${USER_ID}/pay/card`, {
@@ -182,27 +249,29 @@ export default function PayFeeScreen() {
         body: JSON.stringify({
           user_id: USER_ID,
           vehicle_number: vehicleNumber,
-          amount: 0.001, // Replace with real amount
+          amount: 0.001,
           card_id: cardDetails.id,
         }),
       });
       const body = await res.json();
       if (res.ok) {
         animateSuccess();
-        setStatus(`Card payment ✓ (****${cardDetails.last4})`);
+        setStatus(`Card ✓ ****${cardDetails.last4}`);
         setShowCardModal(false);
       } else {
-        Alert.alert("Payment Failed", body.message || "Unknown error.");
+        Alert.alert("Failed", body.message || "Unknown");
       }
-    } catch (err) {
-      console.error("Error making card payment:", err);
-      Alert.alert("Error", "Could not complete payment.");
+    } catch (e) {
+      Alert.alert("Error", e.message);
     } finally {
       setCardLoading(false);
     }
   };
 
-  // If showing PayPal flow, render WebView
+  // unified loading overlay
+  const transactionLoading = walletLoading || cardLoading;
+
+  // PayPal flow
   if (showPayPal) {
     return (
       <SafeAreaView style={styles.webviewContainer}>
@@ -221,10 +290,7 @@ export default function PayFeeScreen() {
     );
   }
 
-  // COMBINED loading flag
-  const transactionLoading = walletLoading || cardLoading;
-
-  // PAYMENT METHODS
+  // payment methods
   const methods = [
     { id: "cash", label: "Cash", icon: cashIcon },
     { id: "card", label: "Card", icon: visaIcon },
@@ -237,7 +303,7 @@ export default function PayFeeScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Processing overlay */}
+      {/* processing overlay */}
       <Modal transparent visible={transactionLoading}>
         <View style={styles.processingOverlay}>
           <ActivityIndicator size="large" color={baseColors.primaryGreen} />
@@ -281,7 +347,7 @@ export default function PayFeeScreen() {
       {!!status && <Text style={styles.status}>{status}</Text>}
       {walletError && <Text style={styles.error}>Error: {walletError.message}</Text>}
 
-      {/* Success Modal */}
+      {/* Success */}
       <Modal transparent visible={showSuccess}>
         <View style={styles.modalOverlay}>
           <Animated.View
@@ -289,6 +355,26 @@ export default function PayFeeScreen() {
           >
             <Text style={styles.check}>✓</Text>
           </Animated.View>
+        </View>
+      </Modal>
+
+      {/* Cash-at-gate Modal */}
+      <Modal transparent visible={showCashModal} animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.cardModalContainer}>
+            <Text style={styles.cardModalTitle}>Pay at Gate</Text>
+            <Text style={styles.modalMessage}>Please pay your fee at the gate.</Text>
+            <TouchableOpacity
+              style={styles.saveButton}
+              onPress={() => {
+                setShowCashModal(false);
+                animateSuccess();
+                setStatus("Pay at gate");
+              }}
+            >
+              <Text style={styles.saveText}>OK</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
 
@@ -303,7 +389,6 @@ export default function PayFeeScreen() {
             >
               <Text style={styles.closeText}>←</Text>
             </TouchableOpacity>
-
             {cardDetails ? (
               <>
                 <Text style={styles.cardInput}>Card: **** {cardDetails.last4}</Text>
@@ -313,12 +398,13 @@ export default function PayFeeScreen() {
                 <TouchableOpacity
                   style={styles.saveButton}
                   onPress={saveCardPayment}
+                  disabled={cardLoading}
                 >
-                  <Text style={styles.saveText}>Pay Now</Text>
+                  {cardLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Pay Now</Text>}
                 </TouchableOpacity>
               </>
             ) : (
-              <Text style={{ color: "#fff" }}>No saved card found.</Text>
+              <Text style={styles.modalMessage}>No saved card found.</Text>
             )}
           </View>
         </View>
@@ -326,27 +412,52 @@ export default function PayFeeScreen() {
 
       {/* Points Modal */}
       <Modal transparent visible={showPointsModal} animationType="slide">
-        <View style={styles.pointsOverlay}>
-          <View style={styles.pointsContainer}>
-            <Text style={styles.pointsTitle}>CURRENT POINTS</Text>
-            <Text style={styles.pointsValue}>{pointsBalance.toFixed(2)}</Text>
+        <View style={styles.cardModalOverlay}>
+          <View style={styles.cardModalContainer}>
+            <Text style={styles.cardModalTitle}>Points Balance</Text>
+            <Text style={[styles.cardInput, { textAlign: "center" }]}>
+              {pointsBalance.toFixed(2)}
+            </Text>
+
+            {/* Top-up */}
+            <TextInput
+              placeholder="Top-up amount"
+              placeholderTextColor="#aaa"
+              keyboardType="numeric"
+              style={styles.cardInput}
+              value={topUpAmount}
+              onChangeText={setTopUpAmount}
+            />
             <TouchableOpacity
-              style={styles.topUpButton}
-              onPress={() => setShowPointsModal(false)}
+              style={styles.saveButton}
+              onPress={topUpPoints}
+              disabled={topUpLoading}
             >
-              <Text style={styles.topUpText}>Top up my Points</Text>
+              {topUpLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Top Up</Text>}
             </TouchableOpacity>
-            <View style={styles.infoBox}>
-              <Text style={styles.infoText}>
-                Your points balance will update within a minute. Please go to
-                the Payment screen and tap Points to view the updated balance.
-              </Text>
-            </View>
+
+            {/* Separator */}
+            <View style={{ height: 1, backgroundColor: "#333", width: "100%", marginVertical: 12 }} />
+
+            {/* Pay with points */}
+            <TextInput
+              placeholder="Pay amount"
+              placeholderTextColor="#aaa"
+              keyboardType="numeric"
+              style={styles.cardInput}
+              value={pointsPayAmount}
+              onChangeText={setPointsPayAmount}
+            />
             <TouchableOpacity
-              onPress={() => setShowPointsModal(false)}
-              style={{ marginTop: 8 }}
+              style={styles.saveButton}
+              onPress={payWithPoints}
+              disabled={payPointsLoading}
             >
-              <Text style={[styles.saveText, { color: "#333" }]}>Close</Text>
+              {payPointsLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Pay Now</Text>}
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setShowPointsModal(false)} style={{ marginTop: 8 }}>
+              <Text style={[styles.saveText, { color: "#fff" }]}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -425,7 +536,7 @@ const styles = StyleSheet.create({
   },
   check: { fontSize: 64, color: baseColors.primaryGreen },
 
-  // Card Modal Styles
+  // Card & Points Modal
   cardModalOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -442,6 +553,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: "#fff",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  modalMessage: {
+    color: "#ccc",
     marginBottom: 12,
     textAlign: "center",
   },
@@ -462,35 +578,11 @@ const styles = StyleSheet.create({
   },
   saveText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 
-  // Points Modal Styles
+  // Points Modal
   pointsOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
   },
-  pointsContainer: {
-    width: "90%",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
-    alignItems: "center",
-  },
-  pointsTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 12 },
-  pointsValue: { fontSize: 36, fontWeight: "bold", marginBottom: 16 },
-  topUpButton: {
-    backgroundColor: baseColors.primaryGreen,
-    borderRadius: 25,
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    marginBottom: 16,
-  },
-  topUpText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  infoBox: {
-    backgroundColor: "#FDEDEC",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 16,
-  },
-  infoText: { color: "#C0392B", textAlign: "center" },
 });
