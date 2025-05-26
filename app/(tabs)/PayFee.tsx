@@ -1,5 +1,4 @@
-// PayFeeScreen.jsx
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -13,6 +12,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Image,
+  Alert,
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { prepareContractCall } from "thirdweb";
@@ -26,44 +26,47 @@ import cryptoIcon from "@/assets/images/crypto.png";
 import paypalIcon from "@/assets/images/paypal.png";
 import pointsIcon from "@/assets/images/points.png";
 
-const PAYPAL_CLIENT_ID =
-  "AdPbYstY_n0fyZHyyKLNfPLaI6xIJm97ATNJ2WvfoPgXNW8BIsxtdbZIJ4cHz6B--cWF2cAE6f0aLnWg";
+const PAYPAL_CLIENT_ID = "AdPbYstY_n0fyZHyyKLNfPLaI6xIJm97ATNJ2WvfoPgXNW8BIsxtdbZIJ4cHz6B--cWF2cAE6f0aLnWg";
+const API_BASE = "http://20.64.252.34:8000";
+const USER_ID = 1;
 
 export default function PayFeeScreen() {
-  // ─── ThirdWeb wallet hook ─────────────────────────────────────────────────
-  const {
-    mutate: sendTransaction,
-    isLoading: walletLoading,
-    error: walletError,
-  } = useSendTransaction();
+  // thirdweb wallet hook
+  const { mutate: sendTransaction, isLoading: walletLoading, error: walletError } = useSendTransaction();
 
-  // ─── Common state ─────────────────────────────────────────────────────────
+  // UI state
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState(null);
-
-  // ─── Success animation ────────────────────────────────────────────────────
-  const modalScale = useRef(new Animated.Value(0)).current;
+  const [modalScale] = useState(new Animated.Value(0));
   const [showSuccess, setShowSuccess] = useState(false);
-
-  // ─── PayPal WebView ───────────────────────────────────────────────────────
   const [showPayPal, setShowPayPal] = useState(false);
   const [payPalHtml, setPayPalHtml] = useState("");
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [cardDetails, setCardDetails] = useState(null);
+  const [showPointsModal, setShowPointsModal] = useState(false);
+  const [pointsBalance] = useState(0.0);
+
+  // New loading state for card payments
+  const [cardLoading, setCardLoading] = useState(false);
+
   const webviewRef = useRef(null);
 
-  // ─── Card modal ───────────────────────────────────────────────────────────
-  const [showCardModal, setShowCardModal] = useState(false);
-  const [cardNumber, setCardNumber] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvv, setCvv] = useState("");
-  const [country, setCountry] = useState("Sri Lanka");
-  const [nickname, setNickname] = useState("");
+  // fetch saved card on mount
+  useEffect(() => {
+    const fetchCardDetails = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/payments/users/${USER_ID}/cards`);
+        const data = await res.json();
+        setCardDetails(data.length ? data[0] : null);
+      } catch (error) {
+        console.error("Error fetching card details:", error);
+      }
+    };
+    fetchCardDetails();
+  }, []);
 
-  // ─── Points modal ─────────────────────────────────────────────────────────
-  const [showPointsModal, setShowPointsModal] = useState(false);
-  const [pointsBalance] = useState(0.0); // fetch real value as needed
-
-  // ─── Success animation helper ────────────────────────────────────────────
+  // animate the ✓ success circle
   const animateSuccess = () => {
     setShowSuccess(true);
     modalScale.setValue(0);
@@ -75,32 +78,32 @@ export default function PayFeeScreen() {
     }).start(() => setTimeout(() => setShowSuccess(false), 1500));
   };
 
-  // ─── On-chain / wallet payment ────────────────────────────────────────────
+  // PAY WITH WALLET
   const payWithWallet = () => {
     if (!vehicleNumber.trim()) {
-      setStatus("Enter a vehicle number.");
-      return;
+      return setStatus("Enter a vehicle number.");
     }
     const tx = prepareContractCall({
       contract: parkingFeeContract,
       method: "function payFee(string)",
       params: [vehicleNumber],
     });
+
     sendTransaction(tx, {
       onSuccess: ({ transactionHash }) => {
         animateSuccess();
         setStatus(`Wallet ✓ Tx: ${transactionHash}`);
       },
-      onError: (err) =>
-        setStatus(err.code === 4001 ? "User denied." : `Error: ${err.message}`),
+      onError: (err) => {
+        setStatus(err.code === 4001 ? "User denied." : `Error: ${err.message}`);
+      },
     });
   };
 
-  // ─── PayPal payment ───────────────────────────────────────────────────────
+  // PAY WITH PAYPAL
   const payWithPayPal = () => {
     if (!vehicleNumber.trim()) {
-      setStatus("Enter a vehicle number.");
-      return;
+      return setStatus("Enter a vehicle number.");
     }
     const html = `
       <!DOCTYPE html><html><head>
@@ -125,6 +128,7 @@ export default function PayFeeScreen() {
     setShowPayPal(true);
   };
 
+  // handle messages from PayPal webview
   const onWebViewMsg = (evt) => {
     const msg = JSON.parse(evt.nativeEvent.data);
     setShowPayPal(false);
@@ -138,7 +142,7 @@ export default function PayFeeScreen() {
     }
   };
 
-  // ─── Proceed button logic ─────────────────────────────────────────────────
+  // main "Proceed" dispatcher
   const onProceed = () => {
     if (!selected) return;
     switch (selected) {
@@ -161,14 +165,44 @@ export default function PayFeeScreen() {
     }
   };
 
-  // ─── Save card (dummy) ───────────────────────────────────────────────────
-  const saveCard = () => {
-    setShowCardModal(false);
-    animateSuccess();
-    setStatus("Card Saved ✓");
+  // CARD PAYMENT
+  const saveCardPayment = async () => {
+    if (!vehicleNumber.trim()) {
+      return Alert.alert("Error", "Enter a vehicle number.");
+    }
+    if (!cardDetails) {
+      return Alert.alert("Error", "No card details found.");
+    }
+
+    setCardLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/payments/users/${USER_ID}/pay/card`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: USER_ID,
+          vehicle_number: vehicleNumber,
+          amount: 0.001, // Replace with real amount
+          card_id: cardDetails.id,
+        }),
+      });
+      const body = await res.json();
+      if (res.ok) {
+        animateSuccess();
+        setStatus(`Card payment ✓ (****${cardDetails.last4})`);
+        setShowCardModal(false);
+      } else {
+        Alert.alert("Payment Failed", body.message || "Unknown error.");
+      }
+    } catch (err) {
+      console.error("Error making card payment:", err);
+      Alert.alert("Error", "Could not complete payment.");
+    } finally {
+      setCardLoading(false);
+    }
   };
 
-  // ─── WebView fallback ─────────────────────────────────────────────────────
+  // If showing PayPal flow, render WebView
   if (showPayPal) {
     return (
       <SafeAreaView style={styles.webviewContainer}>
@@ -179,7 +213,7 @@ export default function PayFeeScreen() {
           javaScriptEnabled
           onMessage={onWebViewMsg}
           startInLoadingState
-          renderLoading={() => <ActivityIndicator style={styles.webview} color="#000" />}
+          renderLoading={() => <ActivityIndicator style={styles.webview} />}
           mixedContentMode="always"
           style={styles.webview}
         />
@@ -187,7 +221,10 @@ export default function PayFeeScreen() {
     );
   }
 
-  // ─── Main UI ──────────────────────────────────────────────────────────────
+  // COMBINED loading flag
+  const transactionLoading = walletLoading || cardLoading;
+
+  // PAYMENT METHODS
   const methods = [
     { id: "cash", label: "Cash", icon: cashIcon },
     { id: "card", label: "Card", icon: visaIcon },
@@ -200,8 +237,14 @@ export default function PayFeeScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Pay Parking Fee</Text>
+      {/* Processing overlay */}
+      <Modal transparent visible={transactionLoading}>
+        <View style={styles.processingOverlay}>
+          <ActivityIndicator size="large" color={baseColors.primaryGreen} />
+        </View>
+      </Modal>
 
+      <Text style={styles.title}>Pay Parking Fee</Text>
       <TextInput
         placeholder="Vehicle Number"
         placeholderTextColor="#aaa"
@@ -242,21 +285,18 @@ export default function PayFeeScreen() {
       <Modal transparent visible={showSuccess}>
         <View style={styles.modalOverlay}>
           <Animated.View
-            style={[
-              styles.successCircle,
-              { transform: [{ scale: modalScale }] },
-            ]}
+            style={[styles.successCircle, { transform: [{ scale: modalScale }] }]}
           >
             <Text style={styles.check}>✓</Text>
           </Animated.View>
         </View>
       </Modal>
 
-      {/* Card Entry Modal */}
+      {/* Card Modal */}
       <Modal transparent visible={showCardModal} animationType="slide">
         <View style={styles.cardModalOverlay}>
           <View style={styles.cardModalContainer}>
-            <Text style={styles.cardModalTitle}>Add Card</Text>
+            <Text style={styles.cardModalTitle}>Confirm Card Payment</Text>
             <TouchableOpacity
               onPress={() => setShowCardModal(false)}
               style={styles.cardModalClose}
@@ -264,49 +304,22 @@ export default function PayFeeScreen() {
               <Text style={styles.closeText}>←</Text>
             </TouchableOpacity>
 
-            <TextInput
-              placeholder="Card number"
-              placeholderTextColor="#aaa"
-              value={cardNumber}
-              onChangeText={setCardNumber}
-              style={styles.cardInput}
-            />
-
-            <View style={styles.row}>
-              <TextInput
-                placeholder="MM/YY"
-                placeholderTextColor="#aaa"
-                value={expiry}
-                onChangeText={setExpiry}
-                style={[styles.cardInput, styles.smallInput, { marginRight: 8 }]}
-              />
-              <TextInput
-                placeholder="CVV"
-                placeholderTextColor="#aaa"
-                value={cvv}
-                onChangeText={setCvv}
-                style={[styles.cardInput, styles.smallInput, { marginLeft: 8 }]}
-              />
-            </View>
-
-            <TextInput
-              placeholder="Country"
-              placeholderTextColor="#aaa"
-              value={country}
-              onChangeText={setCountry}
-              style={styles.cardInput}
-            />
-            <TextInput
-              placeholder="Nickname (optional)"
-              placeholderTextColor="#aaa"
-              value={nickname}
-              onChangeText={setNickname}
-              style={styles.cardInput}
-            />
-
-            <TouchableOpacity style={styles.saveButton} onPress={saveCard}>
-              <Text style={styles.saveText}>Save</Text>
-            </TouchableOpacity>
+            {cardDetails ? (
+              <>
+                <Text style={styles.cardInput}>Card: **** {cardDetails.last4}</Text>
+                <Text style={styles.cardInput}>
+                  Expiry: {cardDetails.exp_month}/{cardDetails.exp_year}
+                </Text>
+                <TouchableOpacity
+                  style={styles.saveButton}
+                  onPress={saveCardPayment}
+                >
+                  <Text style={styles.saveText}>Pay Now</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={{ color: "#fff" }}>No saved card found.</Text>
+            )}
           </View>
         </View>
       </Modal>
@@ -317,25 +330,18 @@ export default function PayFeeScreen() {
           <View style={styles.pointsContainer}>
             <Text style={styles.pointsTitle}>CURRENT POINTS</Text>
             <Text style={styles.pointsValue}>{pointsBalance.toFixed(2)}</Text>
-
             <TouchableOpacity
               style={styles.topUpButton}
-              onPress={() => {
-                setShowPointsModal(false);
-                // navigate to top-up flow...
-              }}
+              onPress={() => setShowPointsModal(false)}
             >
               <Text style={styles.topUpText}>Top up my Points</Text>
             </TouchableOpacity>
-
             <View style={styles.infoBox}>
               <Text style={styles.infoText}>
                 Your points balance will update within a minute. Please go to
-                the Payment screen and tap Points to view the updated
-                balance.
+                the Payment screen and tap Points to view the updated balance.
               </Text>
             </View>
-
             <TouchableOpacity
               onPress={() => setShowPointsModal(false)}
               style={{ marginTop: 8 }}
@@ -394,6 +400,14 @@ const styles = StyleSheet.create({
   status: { color: "#fff", marginTop: 12, textAlign: "center" },
   error: { color: "#ff5555", marginTop: 8 },
 
+  // Processing Overlay
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -411,7 +425,7 @@ const styles = StyleSheet.create({
   },
   check: { fontSize: 64, color: baseColors.primaryGreen },
 
-  // Card Entry Modal
+  // Card Modal Styles
   cardModalOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -440,8 +454,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginBottom: 12,
   },
-  row: { flexDirection: "row", justifyContent: "space-between" },
-  smallInput: { flex: 1 },
   saveButton: {
     backgroundColor: baseColors.primaryGreen,
     borderRadius: 8,
@@ -450,7 +462,7 @@ const styles = StyleSheet.create({
   },
   saveText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 
-  // Points Modal
+  // Points Modal Styles
   pointsOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.5)",

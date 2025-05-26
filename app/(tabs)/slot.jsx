@@ -9,6 +9,7 @@ import {
   Modal,
   Dimensions,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { baseColors } from "@/styles/colors/baseColors";
 import alertColors from "@/styles/colors/alertColors";
@@ -30,7 +31,6 @@ export default function ParkingSlots() {
       "function getVehicleInfo(address _user) view returns ((string vehicleNumber,string userName,address walletAddress,uint256 parkingHours,uint256 totalFee)[])",
     params: [account?.address || "0x0"],
   });
-  // just the plate strings
   const myPlates = vehicleInfos?.map((v) => v.vehicleNumber) || [];
 
   // 2️⃣ REST: fetch all slots
@@ -64,8 +64,6 @@ export default function ParkingSlots() {
   const [selected, setSelected] = useState(null);
   const [bookingModal, setBookingModal] = useState(false);
   const [clearModal, setClearModal] = useState(false);
-
-  // For booking: which plate user picked
   const [chosenPlate, setChosenPlate] = useState("");
 
   // 4️⃣ Book slot
@@ -141,6 +139,9 @@ export default function ParkingSlots() {
     return (
       <View style={styles.center}>
         <Text style={styles.error}>{vehicleError || slotsError}</Text>
+        <TouchableOpacity style={styles.refreshBtn} onPress={fetchSlots}>
+          <Text style={styles.refreshText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -154,8 +155,14 @@ export default function ParkingSlots() {
         keyExtractor={(i) => i.id.toString()}
         numColumns={columns}
         contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl
+            tintColor={baseColors.primaryGreen}
+            refreshing={slotsLoading}
+            onRefresh={fetchSlots}
+          />
+        }
         renderItem={({ item }) => {
-          // pick color & label
           let bg =
             item.status === "free"
               ? baseColors.primaryGreen
@@ -220,7 +227,7 @@ export default function ParkingSlots() {
             <TouchableOpacity
               style={[
                 styles.modalButton,
-                !chosenPlate && { opacity: 0.6 },
+                (!chosenPlate || booking) && styles.disabled,
               ]}
               disabled={!chosenPlate || booking}
               onPress={bookSlot}
@@ -232,7 +239,7 @@ export default function ParkingSlots() {
               )}
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: alertColors.error }]}
+              style={[styles.modalButton, styles.cancelButton]}
               onPress={closeModals}
             >
               <Text style={styles.modalButtonText}>Cancel</Text>
@@ -255,7 +262,10 @@ export default function ParkingSlots() {
               Remove vehicle {selected?.plate}?
             </Text>
             <TouchableOpacity
-              style={[styles.modalButton, clearing && { opacity: 0.6 }]}
+              style={[
+                styles.modalButton,
+                clearing && styles.disabled,
+              ]}
               onPress={clearSlot}
               disabled={clearing}
             >
@@ -266,7 +276,7 @@ export default function ParkingSlots() {
               )}
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: alertColors.error }]}
+              style={[styles.modalButton, styles.cancelButton]}
               onPress={closeModals}
             >
               <Text style={styles.modalButtonText}>Cancel</Text>
@@ -279,18 +289,22 @@ export default function ParkingSlots() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 8, backgroundColor: baseColors.white },
+  container: {
+    flex: 1,
+    backgroundColor: "#0B0F0F",
+    padding: 8,
+  },
   center: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: baseColors.white,
+    backgroundColor: "#0B0F0F",
   },
   header: {
     fontSize: 20,
     fontWeight: "bold",
     marginVertical: 8,
-    color: baseColors.black,
+    color: "#fff",
   },
   list: {
     justifyContent: "space-between",
@@ -305,24 +319,44 @@ const styles = StyleSheet.create({
   slotText: {
     fontSize: 16,
     fontWeight: "bold",
-    color: baseColors.white,
+    color: "#fff",
   },
   slotSubText: {
     fontSize: 12,
-    color: baseColors.white,
+    color: "#fff",
     marginTop: 4,
     textAlign: "center",
+  },
+  message: {
+    color: "#ccc",
+    fontSize: 16,
+    textAlign: "center",
+  },
+  error: {
+    color: alertColors.error,
+    marginBottom: 12,
+  },
+  refreshBtn: {
+    marginTop: 8,
+    backgroundColor: baseColors.primaryGreen,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  refreshText: {
+    color: "#0B0F0F",
+    fontWeight: "bold",
   },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "center",
     alignItems: "center",
   },
   modalContent: {
     width: "80%",
-    backgroundColor: baseColors.white,
+    backgroundColor: "#1A1B22",
     borderRadius: 12,
     padding: 16,
     alignItems: "center",
@@ -331,11 +365,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     marginBottom: 12,
-    color: baseColors.black,
+    color: "#fff",
   },
   modalMessage: {
     fontSize: 14,
-    color: baseColors.gray,
+    color: "#ccc",
     marginBottom: 12,
     textAlign: "center",
   },
@@ -344,7 +378,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: baseColors.gray,
+    borderColor: "#555",
     marginVertical: 4,
     width: "100%",
     alignItems: "center",
@@ -354,10 +388,10 @@ const styles = StyleSheet.create({
     borderColor: baseColors.primaryGreen,
   },
   choiceText: {
-    color: baseColors.black,
+    color: "#fff",
   },
   choiceTextSelected: {
-    color: baseColors.white,
+    color: "#0B0F0F",
     fontWeight: "bold",
   },
   modalButton: {
@@ -367,12 +401,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     marginTop: 12,
   },
+  cancelButton: {
+    backgroundColor: alertColors.error,
+  },
   modalButtonText: {
-    color: baseColors.white,
+    color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
   },
-
-  message: { color: baseColors.gray },
-  error: { color: alertColors.error },
+  disabled: {
+    opacity: 0.6,
+  },
 });

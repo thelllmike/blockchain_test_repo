@@ -1,5 +1,5 @@
 // components/VehicleDashboard.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
+  RefreshControl,
 } from "react-native";
 import {
   useActiveAccount,
@@ -44,6 +45,14 @@ export default function VehicleDashboard() {
       "function getVehicleInfo(address) view returns ((string vehicleNumber,string userName,address walletAddress,uint256 parkingHours,uint256 totalFee,uint256 violationFee)[])",
     params: [account?.address || "0x0"],
   });
+
+  // Optional: auto-poll every 30s
+  useEffect(() => {
+    const id = setInterval(() => {
+      refetch();
+    }, 30000);
+    return () => clearInterval(id);
+  }, [refetch]);
 
   const handleRegister = () => {
     if (!vehicleNumber.trim() || !userName.trim()) {
@@ -104,7 +113,7 @@ export default function VehicleDashboard() {
     );
   }
 
-  if (isFetching) {
+  if (isFetching && !data) {
     return (
       <View style={styles.centeredContainer}>
         <ActivityIndicator size="large" color="#ffffff" />
@@ -118,6 +127,9 @@ export default function VehicleDashboard() {
         <Text style={[styles.message, styles.error]}>
           Error fetching info: {fetchError.message}
         </Text>
+        <TouchableOpacity style={styles.refreshButton} onPress={() => refetch()}>
+          {/* <Text style={styles.refreshText}>Try Again</Text> */}
+        </TouchableOpacity>
       </View>
     );
   }
@@ -125,7 +137,20 @@ export default function VehicleDashboard() {
   const showForm = !data || data.length === 0;
 
   return (
-    <View style={styles.centeredContainer}>
+    <View style={styles.container}>
+      {/* Manual Refresh Button */}
+      {/* {!showForm && (
+        <TouchableOpacity
+          style={[styles.refreshButton, isFetching && styles.disabled]}
+          onPress={() => refetch()}
+          disabled={isFetching}
+        >
+          <Text style={styles.refreshText}>
+            {isFetching ? "Refreshing…" : "Refresh"}
+          </Text>
+        </TouchableOpacity>
+      )} */}
+
       {showForm && !isRegistered ? (
         <View style={styles.registerCard}>
           <Text style={styles.userName}>Register Your Vehicle</Text>
@@ -159,6 +184,9 @@ export default function VehicleDashboard() {
           contentContainerStyle={styles.centeredList}
           data={data}
           keyExtractor={(_, i) => i.toString()}
+          refreshControl={
+            <RefreshControl refreshing={isFetching} onRefresh={() => refetch()} />
+          }
           renderItem={({ item }) => (
             <View style={styles.profileCard}>
               <View style={styles.imageWrapper}>
@@ -180,16 +208,16 @@ export default function VehicleDashboard() {
                   {item.violationFee.toString()}
                 </Text>
               </View>
-              {/* <TouchableOpacity
+              <TouchableOpacity
                 style={styles.payButton}
                 onPress={() => handlePayAll(item.vehicleNumber)}
                 disabled={txLoading}
               >
-                <Text style={styles.payButtonText}>
+                {/* <Text style={styles.payButtonText}>
                   {txLoading ? "Processing…" : "Pay All Fees"}
-                </Text>
-              </TouchableOpacity> */}
-              {!!status && <Text style={styles.status}>{status}</Text>}
+                </Text> */}
+              </TouchableOpacity>
+              {/* {!!status && <Text style={styles.status}>{status}</Text>} */}
             </View>
           )}
         />
@@ -199,6 +227,7 @@ export default function VehicleDashboard() {
 }
 
 const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#0B0F0F", padding: 16 },
   centeredContainer: {
     flex: 1,
     backgroundColor: "#0B0F0F",
@@ -206,26 +235,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
   },
-  centeredList: {
-    justifyContent: "center",
-    alignItems: "center",
-    flexGrow: 1,
+  centeredList: { paddingBottom: 24 },
+  message: { fontSize: 16, color: "#fff", textAlign: "center" },
+  error: { color: "red", marginBottom: 12 },
+
+  refreshButton: {
+    alignSelf: "flex-end",
+    marginBottom: 12,
+    backgroundColor: "#00FF9D",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
   },
-  message: {
-    fontSize: 16,
-    marginTop: 16,
-    color: "#fff",
-  },
-  error: {
-    color: "red",
-  },
+  refreshText: { color: "#0B0F0F", fontWeight: "bold" },
+  disabled: { opacity: 0.6 },
+
   profileCard: {
     backgroundColor: "#0F2E23",
-    padding: 32,
+    padding: 24,
     borderRadius: 20,
-    width: 320,
+    marginBottom: 16,
     alignItems: "center",
-    marginBottom: 24,
   },
   imageWrapper: {
     borderWidth: 4,
@@ -233,43 +263,26 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     padding: 6,
   },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    resizeMode: "cover",
-  },
+  profileImage: { width: 80, height: 80, borderRadius: 40 },
   userName: {
-    marginTop: 20,
-    fontSize: 22,
+    marginTop: 12,
+    fontSize: 20,
     fontWeight: "bold",
     color: "#fff",
   },
-  userDetails: {
-    fontSize: 16,
-    color: "#A0A0A0",
-    marginBottom: 20,
-  },
+  userDetails: { fontSize: 14, color: "#A0A0A0", marginBottom: 12 },
+
   infoBox: {
     width: "100%",
     backgroundColor: "#0B0F0F",
     borderRadius: 16,
-    padding: 24,
-    marginBottom: 16,
+    padding: 16,
+    marginBottom: 12,
   },
-  label: {
-    color: "#ccc",
-    fontSize: 16,
-    marginTop: 10,
-  },
-  value: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
+  label: { color: "#ccc", fontSize: 14, marginTop: 8 },
+  value: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+
   registerCard: {
-    width: "100%",
-    maxWidth: 360,
     backgroundColor: "#0F2E23",
     borderRadius: 20,
     padding: 24,
@@ -293,13 +306,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 24,
-    alignItems: "center",
   },
-  updateButtonText: {
-    color: "#00FF9D",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  updateButtonText: { color: "#00FF9D", fontSize: 16, fontWeight: "bold" },
+
   payButton: {
     marginTop: 12,
     backgroundColor: "#00FF9D",
@@ -307,14 +316,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 20,
   },
-  payButtonText: {
-    color: "#0B0F0F",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  status: {
-    color: "#fff",
-    fontSize: 14,
-    marginTop: 12,
-  },
+  payButtonText: { color: "#0B0F0F", fontSize: 16, fontWeight: "bold" },
+
+  status: { color: "#fff", fontSize: 14, marginTop: 8 },
 });
