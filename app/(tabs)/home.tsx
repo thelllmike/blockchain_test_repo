@@ -1,5 +1,5 @@
 // screens/HomeScreen.tsx
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   SafeAreaView,
+  Alert,
 } from "react-native";
 import { useReadContract, useActiveAccount } from "thirdweb/react";
 import { parkingFeeContract } from "@/constants/thirdweb";
@@ -42,6 +43,38 @@ export default function HomeScreen() {
       "function getVehicleInfo(address) view returns ((string vehicleNumber,string userName,address walletAddress,uint256 parkingHours,uint256 totalFee,uint256 violationFee)[])",
     params: [account?.address || "0x0000000000000000000000000000000000000000"],
   });
+
+  // Keep track of previous violation fees to detect new ones
+  const prevFees = useRef<Record<string, number>>({});
+
+  // Normalize vehicle info into an array and detect increases
+  const vehicles = (vehiclesRaw || []).map((v: any, idx: number) => {
+    const veh =
+      typeof v.vehicleNumber === "string"
+        ? v.vehicleNumber
+        : v[0] ?? "-";
+    const fee =
+      typeof v.violationFee.toNumber === "function"
+        ? v.violationFee.toNumber()
+        : Number(v.violationFee);
+
+    return { key: idx.toString(), vehicleNumber: veh, violationFee: fee };
+  });
+
+  // Alert on new/increased violation fees
+  useEffect(() => {
+    vehicles.forEach(({ vehicleNumber, violationFee }) => {
+      const previous = prevFees.current[vehicleNumber] ?? 0;
+      if (violationFee > previous) {
+        Alert.alert(
+          "New Violation Detected",
+          `Vehicle ${vehicleNumber} has a new violation fee of ${violationFee} LKR.`
+        );
+      }
+      // update for next comparison
+      prevFees.current[vehicleNumber] = violationFee;
+    });
+  }, [vehicles]);
 
   if (!account) {
     return (
@@ -94,20 +127,6 @@ export default function HomeScreen() {
       parkingHours: hrs,
       amountPaid: paid,
       timestamp: ts,
-    };
-  });
-
-  // Normalize vehicle info
-  const vehicles = (vehiclesRaw || []).map((v: any, idx: number) => {
-    const veh = v.vehicleNumber ?? v[0] ?? "-";
-    const violation =
-      typeof v.violationFee.toNumber === "function"
-        ? v.violationFee.toNumber()
-        : Number(v.violationFee);
-    return {
-      key: idx.toString(),
-      vehicleNumber: veh,
-      violationFee: violation,
     };
   });
 
@@ -256,7 +275,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 8,
   },
-  // Each violation card (same style you provided)
   violationCard: {
     backgroundColor: "#D8315B1A",
     borderRadius: 8,
