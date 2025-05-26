@@ -173,7 +173,7 @@ export default function VehicleDashboard() {
                 <Text style={styles.value}>
                   {item.parkingHours.toString()}
                 </Text>
-                <Text style={styles.label}>Total Fee (wei)</Text>
+                <Text style={styles.label}>Total Fee (LKR)</Text>
                 <Text style={styles.value}>{item.totalFee.toString()}</Text>
                 <Text style={styles.label}>Violation Fee (LKR)</Text>
                 <Text style={styles.value}>
