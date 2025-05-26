@@ -10,7 +10,11 @@ import {
   TouchableOpacity,
   Image,
 } from "react-native";
-import { useActiveAccount, useReadContract, useSendTransaction } from "thirdweb/react";
+import {
+  useActiveAccount,
+  useReadContract,
+  useSendTransaction,
+} from "thirdweb/react";
 import { parkingFeeContract } from "@/constants/thirdweb";
 import { prepareContractCall } from "thirdweb";
 import { shortenAddress } from "thirdweb/utils";
@@ -18,17 +22,26 @@ import profile from "@/assets/images/profile.png";
 
 export default function VehicleDashboard() {
   const account = useActiveAccount();
-  const { mutate: sendTransaction, isLoading: isRegistering, error: registerError } = useSendTransaction();
+  const {
+    mutate: sendTransaction,
+    isLoading: txLoading,
+    error: txError,
+  } = useSendTransaction();
 
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [userName, setUserName] = useState("");
   const [status, setStatus] = useState("");
   const [isRegistered, setIsRegistered] = useState(false);
 
-  const { data, isPending, error, refetch } = useReadContract({
+  const {
+    data,
+    isPending: isFetching,
+    error: fetchError,
+    refetch,
+  } = useReadContract({
     contract: parkingFeeContract,
     method:
-      "function getVehicleInfo(address _user) view returns ((string vehicleNumber, string userName, address walletAddress, uint256 parkingHours, uint256 totalFee)[])",
+      "function getVehicleInfo(address) view returns ((string vehicleNumber,string userName,address walletAddress,uint256 parkingHours,uint256 totalFee,uint256 violationFee)[])",
     params: [account?.address || "0x0"],
   });
 
@@ -37,27 +50,46 @@ export default function VehicleDashboard() {
       setStatus("Please enter both vehicle number and user name.");
       return;
     }
-
-    const transaction = prepareContractCall({
+    const tx = prepareContractCall({
       contract: parkingFeeContract,
       method: "function registerVehicle(string,string)",
       params: [vehicleNumber, userName],
     });
-
-    sendTransaction(transaction, {
-      onSuccess: async (data) => {
-        setStatus("Vehicle registered successfully!");
+    sendTransaction(tx, {
+      onSuccess: async () => {
+        setStatus("✅ Vehicle registered!");
         setVehicleNumber("");
         setUserName("");
         setIsRegistered(true);
         await refetch();
       },
       onError: (err) => {
-        if (err?.code === 4001) {
-          setStatus("Transaction rejected by user.");
-        } else {
-          setStatus(`Error: ${err.message}`);
-        }
+        setStatus(
+          err?.code === 4001
+            ? "🚫 Transaction rejected."
+            : `Error: ${err.message}`
+        );
+      },
+    });
+  };
+
+  const handlePayAll = (vehNum: string) => {
+    const tx = prepareContractCall({
+      contract: parkingFeeContract,
+      method: "function payFee(string)",
+      params: [vehNum],
+    });
+    sendTransaction(tx, {
+      onSuccess: async () => {
+        setStatus(`✅ Fees paid for ${vehNum}`);
+        await refetch();
+      },
+      onError: (err) => {
+        setStatus(
+          err?.code === 4001
+            ? "🚫 Payment rejected."
+            : `Error: ${err.message}`
+        );
       },
     });
   };
@@ -65,12 +97,14 @@ export default function VehicleDashboard() {
   if (!account) {
     return (
       <View style={styles.centeredContainer}>
-        <Text style={styles.message}>Please connect your wallet to view your vehicles.</Text>
+        <Text style={styles.message}>
+          Please connect your wallet to view your vehicles.
+        </Text>
       </View>
     );
   }
 
-  if (isPending) {
+  if (isFetching) {
     return (
       <View style={styles.centeredContainer}>
         <ActivityIndicator size="large" color="#ffffff" />
@@ -78,19 +112,21 @@ export default function VehicleDashboard() {
     );
   }
 
-  if (error) {
+  if (fetchError) {
     return (
       <View style={styles.centeredContainer}>
-        <Text style={[styles.message, styles.error]}>Error fetching vehicle info: {error.message}</Text>
+        <Text style={[styles.message, styles.error]}>
+          Error fetching info: {fetchError.message}
+        </Text>
       </View>
     );
   }
 
-  const showRegistrationForm = !data || data.length === 0;
+  const showForm = !data || data.length === 0;
 
   return (
     <View style={styles.centeredContainer}>
-      {showRegistrationForm && !isRegistered ? (
+      {showForm && !isRegistered ? (
         <View style={styles.registerCard}>
           <Text style={styles.userName}>Register Your Vehicle</Text>
           <TextInput
@@ -107,8 +143,14 @@ export default function VehicleDashboard() {
             value={userName}
             onChangeText={setUserName}
           />
-          <TouchableOpacity style={styles.updateButton} onPress={handleRegister} disabled={isRegistering}>
-            <Text style={styles.updateButtonText}>{isRegistering ? "Registering..." : "Register"}</Text>
+          <TouchableOpacity
+            style={styles.updateButton}
+            onPress={handleRegister}
+            disabled={txLoading}
+          >
+            <Text style={styles.updateButtonText}>
+              {txLoading ? "Registering…" : "Register"}
+            </Text>
           </TouchableOpacity>
           {!!status && <Text style={styles.status}>{status}</Text>}
         </View>
@@ -116,20 +158,38 @@ export default function VehicleDashboard() {
         <FlatList
           contentContainerStyle={styles.centeredList}
           data={data}
-          keyExtractor={(_, index) => index.toString()}
+          keyExtractor={(_, i) => i.toString()}
           renderItem={({ item }) => (
             <View style={styles.profileCard}>
               <View style={styles.imageWrapper}>
                 <Image source={profile} style={styles.profileImage} />
               </View>
               <Text style={styles.userName}>{item.userName}</Text>
-              <Text style={styles.userDetails}>{item.vehicleNumber} - {shortenAddress(item.walletAddress)}</Text>
+              <Text style={styles.userDetails}>
+                {item.vehicleNumber} – {shortenAddress(item.walletAddress)}
+              </Text>
               <View style={styles.infoBox}>
                 <Text style={styles.label}>Parking Hours</Text>
-                <Text style={styles.value}>{item.parkingHours.toString()}</Text>
-                <Text style={styles.label}>Total Fee</Text>
+                <Text style={styles.value}>
+                  {item.parkingHours.toString()}
+                </Text>
+                <Text style={styles.label}>Total Fee (wei)</Text>
                 <Text style={styles.value}>{item.totalFee.toString()}</Text>
+                <Text style={styles.label}>Violation Fee (LKR)</Text>
+                <Text style={styles.value}>
+                  {item.violationFee.toString()}
+                </Text>
               </View>
+              {/* <TouchableOpacity
+                style={styles.payButton}
+                onPress={() => handlePayAll(item.vehicleNumber)}
+                disabled={txLoading}
+              >
+                <Text style={styles.payButtonText}>
+                  {txLoading ? "Processing…" : "Pay All Fees"}
+                </Text>
+              </TouchableOpacity> */}
+              {!!status && <Text style={styles.status}>{status}</Text>}
             </View>
           )}
         />
@@ -195,6 +255,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#0B0F0F",
     borderRadius: 16,
     padding: 24,
+    marginBottom: 16,
   },
   label: {
     color: "#ccc",
@@ -236,6 +297,18 @@ const styles = StyleSheet.create({
   },
   updateButtonText: {
     color: "#00FF9D",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  payButton: {
+    marginTop: 12,
+    backgroundColor: "#00FF9D",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  payButtonText: {
+    color: "#0B0F0F",
     fontSize: 16,
     fontWeight: "bold",
   },
