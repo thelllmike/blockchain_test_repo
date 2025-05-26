@@ -15,6 +15,7 @@ import {
   Image,
   Alert,
 } from "react-native";
+import QRCode from "react-native-qrcode-svg";
 import { WebView } from "react-native-webview";
 import { prepareContractCall } from "thirdweb";
 import { useSendTransaction } from "thirdweb/react";
@@ -32,7 +33,6 @@ const API_BASE = "http://20.64.252.34:8000";
 const USER_ID = 1;
 
 export default function PayFeeScreen() {
-  // thirdweb wallet hook
   const { mutate: sendTransaction, isLoading: walletLoading, error: walletError } = useSendTransaction();
 
   // UI state
@@ -43,6 +43,11 @@ export default function PayFeeScreen() {
   // success animation
   const [modalScale] = useState(new Animated.Value(0));
   const [showSuccess, setShowSuccess] = useState(false);
+
+  // QR code modal
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrCountdown, setQrCountdown] = useState(30);
+  const [qrValue, setQrValue] = useState("");
 
   // PayPal
   const [showPayPal, setShowPayPal] = useState(false);
@@ -65,20 +70,18 @@ export default function PayFeeScreen() {
   // Cash
   const [showCashModal, setShowCashModal] = useState(false);
 
-  // Fetch saved card once
+  // fetch card once
   useEffect(() => {
     (async () => {
       try {
         const res = await fetch(`${API_BASE}/payments/users/${USER_ID}/cards`);
         const data = await res.json();
         setCardDetails(data[0] || null);
-      } catch (e) {
-        console.error(e);
-      }
+      } catch {}
     })();
   }, []);
 
-  // Fetch current points balance whenever modal opens
+  // fetch points when opening
   useEffect(() => {
     if (!showPointsModal) return;
     (async () => {
@@ -90,13 +93,28 @@ export default function PayFeeScreen() {
         });
         const json = await res.json();
         setPointsBalance(json.points_balance);
-      } catch (e) {
-        console.error("Fetch points failed", e);
-      }
+      } catch {}
     })();
   }, [showPointsModal]);
 
-  // Success animation
+  // QR countdown effect
+  useEffect(() => {
+    if (!showQrModal) return;
+    setQrCountdown(30);
+    const timer = setInterval(() => {
+      setQrCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setShowQrModal(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [showQrModal]);
+
+  // animate ✓ then show QR
   const animateSuccess = () => {
     setShowSuccess(true);
     modalScale.setValue(0);
@@ -105,12 +123,18 @@ export default function PayFeeScreen() {
       duration: 600,
       easing: Easing.bounce,
       useNativeDriver: true,
-    }).start(() => setTimeout(() => setShowSuccess(false), 1500));
+    }).start(() => {
+      setTimeout(() => {
+        setShowSuccess(false);
+        setShowQrModal(true);
+      }, 1500);
+    });
   };
 
-  // Wallet payment
+  // handlers
   const payWithWallet = () => {
     if (!vehicleNumber.trim()) return setStatus("Enter a vehicle number.");
+    setQrValue(`wallet|${vehicleNumber}|${Date.now()}`);
     const tx = prepareContractCall({
       contract: parkingFeeContract,
       method: "function payFee(string)",
@@ -118,6 +142,7 @@ export default function PayFeeScreen() {
     });
     sendTransaction(tx, {
       onSuccess: ({ transactionHash }) => {
+        setQrValue(`wallet|${vehicleNumber}|${transactionHash}`);
         animateSuccess();
         setStatus(`Wallet ✓ Tx: ${transactionHash}`);
       },
@@ -127,7 +152,6 @@ export default function PayFeeScreen() {
     });
   };
 
-  // PayPal
   const payWithPayPal = () => {
     if (!vehicleNumber.trim()) return setStatus("Enter a vehicle number.");
     const html = `
@@ -139,10 +163,9 @@ export default function PayFeeScreen() {
         <script src='https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD'></script>
         <script>
           paypal.Buttons({
-            style:{layout:'vertical',color:'gold',shape:'pill',label:'paypal'},
             createOrder:(d,a)=>a.order.create({purchase_units:[{amount:{value:'200.00'},custom_id:'${vehicleNumber}'}]}),
             onApprove:(d,a)=>a.order.capture().then(()=>{
-              window.ReactNativeWebView.postMessage(JSON.stringify({status:'success',orderID:d.orderID}));
+              window.ReactNativeWebView.postMessage(JSON.stringify({status:'success',orderID:d.orderID}))
             }),
             onCancel:()=>window.ReactNativeWebView.postMessage(JSON.stringify({status:'cancel'})),
             onError:(e)=>window.ReactNativeWebView.postMessage(JSON.stringify({status:'error',error:e.toString()}))
@@ -152,10 +175,12 @@ export default function PayFeeScreen() {
     setPayPalHtml(html);
     setShowPayPal(true);
   };
+
   const onWebViewMsg = (evt) => {
     const msg = JSON.parse(evt.nativeEvent.data);
     setShowPayPal(false);
     if (msg.status === "success") {
+      setQrValue(`paypal|${vehicleNumber}|${msg.orderID}`);
       animateSuccess();
       setStatus(`PayPal ✓ Order ${msg.orderID}`);
     } else if (msg.status === "cancel") {
@@ -165,7 +190,37 @@ export default function PayFeeScreen() {
     }
   };
 
-  // Top-up points
+  const saveCardPayment = async () => {
+    if (!vehicleNumber.trim()) return Alert.alert("Enter a vehicle number.");
+    if (!cardDetails) return Alert.alert("No card found.");
+    setCardLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/payments/users/${USER_ID}/pay/card`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: USER_ID,
+          vehicle_number: vehicleNumber,
+          amount: 0.001,
+          card_id: cardDetails.id,
+        }),
+      });
+      const body = await res.json();
+      if (res.ok) {
+        setQrValue(`card|${vehicleNumber}|${Date.now()}`);
+        animateSuccess();
+        setStatus(`Card ✓ ****${cardDetails.last4}`);
+        setShowCardModal(false);
+      } else {
+        Alert.alert("Failed", body.message || "Unknown");
+      }
+    } catch (e) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setCardLoading(false);
+    }
+  };
+
   const topUpPoints = async () => {
     if (!topUpAmount) return Alert.alert("Enter an amount");
     setTopUpLoading(true);
@@ -185,7 +240,6 @@ export default function PayFeeScreen() {
     }
   };
 
-  // Pay with points
   const payWithPoints = async () => {
     if (!vehicleNumber.trim()) return Alert.alert("Enter vehicle number");
     if (!pointsPayAmount) return Alert.alert("Enter pay amount");
@@ -202,6 +256,7 @@ export default function PayFeeScreen() {
       });
       const json = await res.json();
       if (res.ok) {
+        setQrValue(`points|${vehicleNumber}|${pointsPayAmount}`);
         animateSuccess();
         setStatus(`Points ✓ Paid ${pointsPayAmount}`);
         setShowPointsModal(false);
@@ -215,11 +270,11 @@ export default function PayFeeScreen() {
     }
   };
 
-  // Cash-at-gate
   const onProceed = () => {
     if (!selected) return;
     switch (selected) {
       case "cash":
+        setQrValue(`cash|${vehicleNumber}|${Date.now()}`);
         setShowCashModal(true);
         break;
       case "card":
@@ -237,41 +292,9 @@ export default function PayFeeScreen() {
     }
   };
 
-  // Save card payment
-  const saveCardPayment = async () => {
-    if (!vehicleNumber.trim()) return Alert.alert("Enter a vehicle number.");
-    if (!cardDetails) return Alert.alert("No card found.");
-    setCardLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/payments/users/${USER_ID}/pay/card`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: USER_ID,
-          vehicle_number: vehicleNumber,
-          amount: 0.001,
-          card_id: cardDetails.id,
-        }),
-      });
-      const body = await res.json();
-      if (res.ok) {
-        animateSuccess();
-        setStatus(`Card ✓ ****${cardDetails.last4}`);
-        setShowCardModal(false);
-      } else {
-        Alert.alert("Failed", body.message || "Unknown");
-      }
-    } catch (e) {
-      Alert.alert("Error", e.message);
-    } finally {
-      setCardLoading(false);
-    }
-  };
-
-  // unified loading overlay
   const transactionLoading = walletLoading || cardLoading;
 
-  // PayPal flow
+  // PayPal WebView
   if (showPayPal) {
     return (
       <SafeAreaView style={styles.webviewContainer}>
@@ -290,7 +313,6 @@ export default function PayFeeScreen() {
     );
   }
 
-  // payment methods
   const methods = [
     { id: "cash", label: "Cash", icon: cashIcon },
     { id: "card", label: "Card", icon: visaIcon },
@@ -304,9 +326,27 @@ export default function PayFeeScreen() {
   return (
     <View style={styles.container}>
       {/* processing overlay */}
-      <Modal transparent visible={transactionLoading}>
+      <Modal transparent visible={transactionLoading || showSuccess}>
         <View style={styles.processingOverlay}>
-          <ActivityIndicator size="large" color={baseColors.primaryGreen} />
+          {transactionLoading ? (
+            <ActivityIndicator size="large" color={baseColors.primaryGreen} />
+          ) : (
+            <Animated.View
+              style={[styles.successCircle, { transform: [{ scale: modalScale }] }]}
+            >
+              <Text style={styles.check}>✓</Text>
+            </Animated.View>
+          )}
+        </View>
+      </Modal>
+
+      {/* QR code modal */}
+      <Modal transparent visible={showQrModal}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.qrModalContainer}>
+            <QRCode value={qrValue} size={200} />
+            <Text style={styles.qrCountdown}>Expires in {qrCountdown}s</Text>
+          </View>
         </View>
       </Modal>
 
@@ -347,18 +387,7 @@ export default function PayFeeScreen() {
       {!!status && <Text style={styles.status}>{status}</Text>}
       {walletError && <Text style={styles.error}>Error: {walletError.message}</Text>}
 
-      {/* Success */}
-      <Modal transparent visible={showSuccess}>
-        <View style={styles.modalOverlay}>
-          <Animated.View
-            style={[styles.successCircle, { transform: [{ scale: modalScale }] }]}
-          >
-            <Text style={styles.check}>✓</Text>
-          </Animated.View>
-        </View>
-      </Modal>
-
-      {/* Cash-at-gate Modal */}
+      {/* Cash-at-gate */}
       <Modal transparent visible={showCashModal} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.cardModalContainer}>
@@ -378,7 +407,7 @@ export default function PayFeeScreen() {
         </View>
       </Modal>
 
-      {/* Card Modal */}
+      {/* Card payment */}
       <Modal transparent visible={showCardModal} animationType="slide">
         <View style={styles.cardModalOverlay}>
           <View style={styles.cardModalContainer}>
@@ -410,7 +439,7 @@ export default function PayFeeScreen() {
         </View>
       </Modal>
 
-      {/* Points Modal */}
+      {/* Points payment */}
       <Modal transparent visible={showPointsModal} animationType="slide">
         <View style={styles.cardModalOverlay}>
           <View style={styles.cardModalContainer}>
@@ -419,7 +448,6 @@ export default function PayFeeScreen() {
               {pointsBalance.toFixed(2)}
             </Text>
 
-            {/* Top-up */}
             <TextInput
               placeholder="Top-up amount"
               placeholderTextColor="#aaa"
@@ -436,10 +464,8 @@ export default function PayFeeScreen() {
               {topUpLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Top Up</Text>}
             </TouchableOpacity>
 
-            {/* Separator */}
             <View style={{ height: 1, backgroundColor: "#333", width: "100%", marginVertical: 12 }} />
 
-            {/* Pay with points */}
             <TextInput
               placeholder="Pay amount"
               placeholderTextColor="#aaa"
@@ -511,7 +537,6 @@ const styles = StyleSheet.create({
   status: { color: "#fff", marginTop: 12, textAlign: "center" },
   error: { color: "#ff5555", marginTop: 8 },
 
-  // Processing Overlay
   processingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -525,6 +550,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+
   successCircle: {
     width: 160,
     height: 160,
@@ -532,11 +558,21 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
-    elevation: 10,
   },
   check: { fontSize: 64, color: baseColors.primaryGreen },
 
-  // Card & Points Modal
+  qrModalContainer: {
+    backgroundColor: "#111D13",
+    borderRadius: 12,
+    padding: 24,
+    alignItems: "center",
+  },
+  qrCountdown: {
+    color: "#fff",
+    marginTop: 12,
+    fontSize: 16,
+  },
+
   cardModalOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -577,12 +613,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   saveText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-
-  // Points Modal
-  pointsOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
 });
