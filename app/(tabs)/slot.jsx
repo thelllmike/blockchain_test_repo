@@ -413,3 +413,5 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
 });
+
+// Note: Make sure to replace the API URL with your actual backend endpoint.
